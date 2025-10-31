@@ -1,7 +1,10 @@
 services:
   - type: web
-    name: ai-calendar
+    name: ai-calendar-agent
     env: python
-    buildCommand: "pip install -r Ai.py/requirements.txt"
+    buildCommand: "pip install -r requirements.txt"
     startCommand: "python Ai.py/main.py"
     plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10
