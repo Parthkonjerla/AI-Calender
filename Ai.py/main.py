@@ -1,177 +1,71 @@
 import re
 import json
-import uuid
-from datetime import datetime, timedelta
-from typing import Optional, List
-import os
 import dateparser
-import sys
-import time
-import itertools
-from dataclasses import dataclass, asdict
+from flask import Flask, request, jsonify
 
-# ---------- Constants ----------
-CALENDAR_FILE = "calendar_events.json"
-DEFAULT_PARTICIPANTS = ["Parth", "Nitish", "Atul"]
-DEFAULT_DURATION = 30  # minutes
+# --------------------------
+# Calendar Agent Functions
+# --------------------------
+events = []
 
-# Regex patterns
-ADD_PATTERN = re.compile(r"add (.+?) on (.+?)(?: for (\d+)\s*minutes?)?(?: with (.+))?$", re.I)
-VIEW_PATTERN = re.compile(r"what(?:'s| is) happening on (.+)", re.I)
-DELETE_PATTERN = re.compile(r"delete event (.+)", re.I)
+def add_event(date, description):
+    events.append({"date": date, "description": description})
+    return f"Added event: '{description}' on {date}"
 
-# ---------- Dataclass ----------
-@dataclass
-class Event:
-    id: str
-    title: str
-    start: str
-    end: str
-    participants: List[str]
+def show_events():
+    if not events:
+        return "No events found."
+    return [{"date": e["date"], "description": e["description"]} for e in events]
 
-# ---------- Load & Save ----------
-def load_events() -> List[Event]:
-    if os.path.exists(CALENDAR_FILE):
-        try:
-            with open(CALENDAR_FILE, "r") as f:
-                data = json.load(f)
-                return [Event(**e) for e in data]
-        except json.JSONDecodeError:
-            return []
-    return []
+def delete_event(description):
+    global events
+    before = len(events)
+    events = [e for e in events if e["description"].lower() != description.lower()]
+    after = len(events)
+    return f"Deleted {before - after} event(s) with description '{description}'."
 
-def save_events(events: List[Event]):
-    with open(CALENDAR_FILE, "w") as f:
-        json.dump([asdict(e) for e in events], f, indent=2)
+# --------------------------
+# Flask Web App
+# --------------------------
+app = Flask(__name__)
 
-events_store: List[Event] = load_events()
+@app.route("/")
+def home():
+    return "AI Calendar Agent is running successfully on Render!"
 
-# ---------- Utility Functions ----------
-def parse_to_datetime(date_text: str) -> datetime:
-    dt = dateparser.parse(date_text, settings={"PREFER_DATES_FROM": "future"})
-    if not dt:
-        raise ValueError(f"❌ Could not parse date/time from '{date_text}'")
-    return dt
+@app.route("/add", methods=["POST"])
+def add():
+    data = request.get_json()
+    date_str = data.get("date")
+    description = data.get("description")
 
-def animated_print(text: str, delay: float = 0.05):
-    """Simulate typing animation"""
-    for char in text:
-        print(char, end='', flush=True)
-        time.sleep(delay)
-    print()  # newline
+    if not date_str or not description:
+        return jsonify({"error": "Both 'date' and 'description' are required"}), 400
 
-def spinner(seconds: float = 1.0):
-    """Simple console spinner animation"""
-    for c in itertools.cycle('|/-\\'):
-        sys.stdout.write(f'\r⏳ Processing {c}')
-        sys.stdout.flush()
-        time.sleep(0.1)
-        seconds -= 0.1
-        if seconds <= 0:
-            break
-    sys.stdout.write('\r✔ Done!      \n')
+    date = dateparser.parse(date_str)
+    if not date:
+        return jsonify({"error": "Invalid date format"}), 400
 
-# ---------- Core Functions ----------
-def schedule_event(title: str, datetime_text: str, duration_minutes: int = DEFAULT_DURATION, participants: Optional[List[str]] = None) -> str:
-    start_dt = parse_to_datetime(datetime_text)
-    end_dt = start_dt + timedelta(minutes=duration_minutes)
-    participants = participants or DEFAULT_PARTICIPANTS
-    event_id = str(uuid.uuid4())
+    result = add_event(date.strftime("%Y-%m-%d"), description)
+    return jsonify({"message": result})
 
-    event = Event(
-        id=event_id,
-        title=title,
-        start=start_dt.isoformat(),
-        end=end_dt.isoformat(),
-        participants=participants
-    )
+@app.route("/show", methods=["GET"])
+def show():
+    return jsonify(show_events())
 
-    # Conflict detection
-    conflicts = [
-        e for e in events_store
-        if datetime.fromisoformat(e.start) < end_dt and datetime.fromisoformat(e.end) > start_dt
-    ]
-    if conflicts:
-        conflict_titles = ", ".join([e.title for e in conflicts])
-        return f"⚠ Conflict detected with event(s): {conflict_titles}"
+@app.route("/delete", methods=["DELETE"])
+def delete():
+    data = request.get_json()
+    description = data.get("description")
 
-    spinner(0.8)  # running animation
-    events_store.append(event)
-    save_events(events_store)
-    return f"✅ Event '{title}' scheduled on {start_dt.strftime('%Y-%m-%d %H:%M')} for {duration_minutes} minutes with {', '.join(participants)}"
+    if not description:
+        return jsonify({"error": "'description' is required"}), 400
 
-def list_events(date_text: Optional[str] = None) -> str:
-    if date_text:
-        target_date = parse_to_datetime(date_text).date()
-        events = [e for e in events_store if datetime.fromisoformat(e.start).date() == target_date]
-        if not events:
-            return f"ℹ No events scheduled for {target_date}"
-    else:
-        events = events_store
-        if not events:
-            return "ℹ No events scheduled."
-    
-    events = sorted(events, key=lambda e: datetime.fromisoformat(e.start))
-    lines = []
-    for e in events:
-        lines.append(
-            f"🗓 {e.id}: {e.title} on {datetime.fromisoformat(e.start).strftime('%Y-%m-%d %H:%M')} "
-            f"to {datetime.fromisoformat(e.end).strftime('%H:%M')} with {', '.join(e.participants)}"
-        )
-    return "\n".join(lines)
+    result = delete_event(description)
+    return jsonify({"message": result})
 
-def remove_event(event_id: str) -> str:
-    for e in events_store:
-        if e.id == event_id:
-            spinner(0.5)
-            events_store.remove(e)
-            save_events(events_store)
-            return f"🗑 Deleted event {event_id}: {e.title}"
-    return f"ℹ No event found with id {event_id}"
-
-# ---------- Command Processing ----------
-def handle_command(command: str) -> str:
-    command = command.strip()
-
-    m = ADD_PATTERN.match(command)
-    if m:
-        title = m.group(1).strip()
-        dt_text = m.group(2).strip()
-        duration = int(m.group(3)) if m.group(3) else DEFAULT_DURATION
-        participants = [p.strip() for p in m.group(4).split(",")] if m.group(4) else None
-        try:
-            return schedule_event(title, dt_text, duration, participants)
-        except Exception as e:
-            return str(e)
-
-    m = VIEW_PATTERN.match(command)
-    if m:
-        return list_events(m.group(1).strip())
-
-    if command.lower() == "view all events":
-        return list_events()
-
-    m = DELETE_PATTERN.match(command)
-    if m:
-        return remove_event(m.group(1).strip())
-
-    return (
-        "❌ Command not recognized. Examples:\n"
-        "- add meeting on tomorrow at 10am for 60 minutes with Parth, Nitish, Atul\n"
-        "- what's happening on 2025-10-16\n"
-        "- view all events\n"
-        "- delete event <uuid>"
-    )
-
-# ---------- Main ----------
-def main():
-    print("🤖 AI Calendar Agent (JSON + UUID) — Type a command (or 'exit' to quit)")
-    while True:
-        cmd = input(">>> ").strip()
-        if cmd.lower() in {"exit", "quit"}:
-            print("👋 Goodbye!")
-            break
-        animated_print(handle_command(cmd), delay=0.01)
-
+# --------------------------
+# Run the app
+# --------------------------
 if __name__ == "__main__":
-    main()
+    app.run(host="0.0.0.0", port=10000)
