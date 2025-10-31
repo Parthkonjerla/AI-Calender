@@ -2,7 +2,7 @@ import re
 import json
 import uuid
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 import os
 import dateparser
 import sys
@@ -123,7 +123,7 @@ def list_events(date_text: Optional[str] = None) -> str:
 def remove_event(event_id: str) -> str:
     for e in events_store:
         if e.id == event_id:
-            spinner(0.5)  # running animation
+            spinner(0.5)
             events_store.remove(e)
             save_events(events_store)
             return f"🗑 Deleted event {event_id}: {e.title}"
@@ -133,7 +133,6 @@ def remove_event(event_id: str) -> str:
 def handle_command(command: str) -> str:
     command = command.strip()
 
-    # Add event
     m = ADD_PATTERN.match(command)
     if m:
         title = m.group(1).strip()
@@ -145,16 +144,13 @@ def handle_command(command: str) -> str:
         except Exception as e:
             return str(e)
 
-    # View specific day
     m = VIEW_PATTERN.match(command)
     if m:
         return list_events(m.group(1).strip())
 
-    # View all
     if command.lower() == "view all events":
         return list_events()
 
-    # Delete by id
     m = DELETE_PATTERN.match(command)
     if m:
         return remove_event(m.group(1).strip())
@@ -177,5 +173,5 @@ def main():
             break
         animated_print(handle_command(cmd), delay=0.01)
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     main()
