@@ -1,7 +1,7 @@
 services:
   - type: web
-    name: my-python-app
+    name: ai-calendar
     env: python
+    buildCommand: "pip install -r Ai.py/requirements.txt"
+    startCommand: "python Ai.py/main.py"
     plan: free
-    buildCommand: ""
-    startCommand: python Ai.py
